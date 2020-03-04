@@ -1050,6 +1050,7 @@ Resources:
 
           echo Determine whether a certificate needs to be generated
           cert_arn=$(aws iam list-server-certificates --query 'ServerCertificateMetadataList[?ServerCertificateName==`non-production-testing-server-cert`].Arn' --output text)
+          sleep_time=10
           if [[ $(echo "$cert_arn" | grep "non-production-testing-server-cert") != *"non-production-testing-server-cert"* ]]; then
             echo *** Beginnning ELB HTTPS configuration ***
             echo Generating private key...
@@ -1068,6 +1069,24 @@ Resources:
             echo Removing key files...
             rm /tmp/*.pem
           fi
+
+          while [[ $(echo "$cert_arn" | grep "non-production-testing-server-cert") != *"non-production-testing-server-cert"* ]] && [[ $sleep_time -le 30 ]]; do 
+            sleep $sleep_time
+            sleep_time=$((sleep_time+5))
+            cert_arn=$(aws iam list-server-certificates --query 'ServerCertificateMetadataList[?ServerCertificateName==`non-production-testing-server-cert`].Arn' --output text)
+          done
+
+          if [[ $sleep_time -ge 30 ]]; then
+            aws sns publish --topic-arn ${pSecurityAlarmTopic} --subject "Load Balancer Listener creation failed" --message "Please note that the creation of the Listener for the WebsiteURL and the LandingPageURL was not successful. This event is rare but can happen, however, to manually create the listeners please use the below commands from any workstation with the AWS CLI installed and permission to the AWS account where the QuickStart stack was launched.
+            
+            Use the below command to verify that the certificate ARN matches the one in the command which creates the listener: 
+            $ aws iam list-server-certificates 
+            
+            If the certificates match, run the below commands to create the listners for the loadbalancer:
+            $ aws elb create-load-balancer-listeners --load-balancer-name "${rELBWeb}" --listeners "Protocol=HTTPS,LoadBalancerPort=443,InstanceProtocol=HTTP,InstancePort=80,SSLCertificateId=$cert_arn" --region eu-west-2 
+            $ aws elb create-load-balancer-listeners --load-balancer-name "${rELBApp}" --listeners "Protocol=HTTPS,LoadBalancerPort=443,InstanceProtocol=HTTP,InstancePort=80,SSLCertificateId=$cert_arn" --region eu-west-2" --region ${AWS::Region}
+          fi
+          
           echo Creating ELB HTTPS listener using the cert stored in the environment variable...
           aws elb create-load-balancer-listeners --load-balancer-name ${rELBWeb} --listeners "Protocol=HTTPS,LoadBalancerPort=443,InstanceProtocol=HTTP,InstancePort=80,SSLCertificateId=$cert_arn" --region ${AWS::Region}
           aws elb create-load-balancer-listeners --load-balancer-name ${rELBApp} --listeners "Protocol=HTTPS,LoadBalancerPort=443,InstanceProtocol=HTTP,InstancePort=80,SSLCertificateId=$cert_arn" --region ${AWS::Region}
